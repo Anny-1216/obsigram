@@ -9,76 +9,126 @@ def apply_patch(filename="index.html"):
     with open(filename, 'r', encoding='utf-8') as file:
         content = file.read()
 
-    print("Applying Patch 8: Database Stability & Mobile UI Enhancements...")
-    original_content = content
+    # --- 1. INJECT THE OPTIMIZED DB LOGIC ---
+    # Your provided code is much cleaner, handles transactions with promises properly, 
+    # and uses reduce for the ID counter.
+    new_db_code = """const DB_NAME = 'MiNotes3D_DB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'notes';
+    let db;
 
-    # --- 1. FIX THE DATABASE (Switch from .add to .put) ---
-    old_db_logic = """    async function saveToDB(notesArray) {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        store.clear().onsuccess = () => {
-            notesArray.forEach(note => {
-                const cleanNote = { ...note };
-                delete cleanNote.__sprite; // Don't save 3D objects to DB
-                delete cleanNote.parent; // Don't save circular references
-                store.add(cleanNote);
-            });
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onerror = () => reject(req.error);
+        req.onupgradeneeded = (e) => {
+          if (!e.target.result.objectStoreNames.contains(STORE_NAME))
+            e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
         };
-    }"""
+        req.onsuccess = () => { db = req.result; resolve(db); };
+      });
+    }
 
-    new_db_logic = """    async function saveToDB(notesArray) {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        
-        // FIX: Use .put() to safely update existing nodes and insert new ones without race conditions
+    function saveToDB(notesArray) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.clear();                          // prevent stale ghost notes
         notesArray.forEach(note => {
-            const cleanNote = { ...note };
-            delete cleanNote.__sprite; 
-            delete cleanNote.parent; 
-            store.put(cleanNote); 
+          const { __sprite, parent, ...clean } = note;
+          store.put(clean);
         });
-    }"""
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
 
-    if "store.put(cleanNote);" not in content:
-        content = content.replace(old_db_logic, new_db_logic)
-        print(" -> Upgraded IndexedDB engine to use robust upserts (.put).")
+    function loadFromDB() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readonly');
+        const req = tx.objectStore(STORE_NAME).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
 
-    # --- 2. FIX THE MOBILE UI (Bottom Sheet layout) ---
-    old_mobile_css = """        /* Mobile Overrides */
-        @media (max-width: 768px) {
-            #controls-container, #search-container { width: 280px; left: 50%; margin-left: -140px; top: 80px; }
-            .main-btn, .btn-secondary { padding: 12px; } /* Larger touch targets */
-        }"""
+    async function startApp() {
+      await initDB();
+      const savedNotes = await loadFromDB();
 
-    new_mobile_css = """        /* Mobile Overrides */
-        @media (max-width: 768px) {
-            #controls-container, #search-container { width: 280px; left: 50%; margin-left: -140px; top: 80px; }
-            .main-btn, .btn-secondary { padding: 12px; } /* Larger touch targets */
-            
-            /* Mobile Info Panel Adjustments (Bottom Sheet Style) */
-            #info-panel { 
-                bottom: 0; width: 100vw; max-width: 100vw; 
-                border-radius: 24px 24px 0 0; padding: 20px 15px 10px 15px; 
-                border-left: none; border-right: none; border-bottom: none;
-            }
-            #edit-content-input { max-height: 40vh; } /* Gives keyboard room */
-            .toolbar button { font-size: 18px; padding: 5px; } /* Prevent toolbar crowding */
-            
-            /* Adjust Fullscreen on Mobile */
-            #info-panel.info-fullscreen { padding-top: 60px; border-radius: 0; }
-        }"""
+      if (savedNotes.length > 0) {
+        document.getElementById('empty-state-message').style.opacity = '0';
+        idCounter = savedNotes.reduce((max, n) => Math.max(max, n.id), 0) + 1;
+        graphData.nodes = savedNotes.map(n => ({ ...n }));
 
-    if "Bottom Sheet Style" not in content:
-        content = content.replace(old_mobile_css, new_mobile_css)
-        print(" -> Overhauled mobile CSS for the Mi Notes editor (Bottom Sheet implementation).")
+        savedNotes.forEach(note => {
+          if (note.parentId != null) {
+            graphData.links.push({ source: note.parentId, target: note.id });
+            const child = graphData.nodes.find(n => n.id === note.id);
+            if (child) child.parent = graphData.nodes.find(p => p.id === note.parentId);
+          }
+        });
+      }
+
+      Graph.graphData(graphData);
+      updateActiveNodeDisplay();
+    }
+
+    startApp();"""
+
+    # Replace the old DB logic block
+    content = re.sub(r"const DB_NAME = 'MiNotes3D_DB';.*?startApp\(\);", new_db_code, content, flags=re.DOTALL)
+
+    # --- 2. ADD PWA INSTALL PROMPT LOGIC ---
+    # Browsers block auto-popping the install prompt without a user gesture.
+    # We intercept 'beforeinstallprompt' and show a sleek floating "Install App" button.
+    
+    pwa_btn_html = """\n<!-- PWA Install Button -->
+<button id="pwa-install-btn" style="display:none; position:absolute; bottom:30px; left:50%; transform:translateX(-50%); z-index:9999; padding:12px 24px; background:#00ff88; color:#050510; border:none; border-radius:24px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 4px 15px rgba(0,255,136,0.4);">⬇️ Install Mi3D Notes</button>\n"""
+    
+    if 'id="pwa-install-btn"' not in content:
+        content = content.replace('<div id="3d-graph"></div>', pwa_btn_html + '<div id="3d-graph"></div>')
+
+    pwa_js = """
+    // --- PWA Install Prompt Listener ---
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent the mini-infobar from appearing on mobile
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        deferredPrompt = e;
+        // Update UI notify the user they can install the PWA
+        const installBtn = document.getElementById('pwa-install-btn');
+        installBtn.style.display = 'block';
+
+        installBtn.addEventListener('click', async () => {
+            // Hide the app provided install promotion
+            installBtn.style.display = 'none';
+            // Show the install prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            const { outcome } = await deferredPrompt.userChoice;
+            // We've used the prompt, and can't use it again, throw it away
+            deferredPrompt = null;
+        });
+    });
+
+    window.addEventListener('appinstalled', () => {
+        // Hide the install button if it's still visible
+        document.getElementById('pwa-install-btn').style.display = 'none';
+        deferredPrompt = null;
+        console.log('PWA was successfully installed');
+    });
+    """
+    
+    if 'beforeinstallprompt' not in content:
+        content = content.replace('// Service Worker for PWA', pwa_js + '\n    // Service Worker for PWA')
 
     # --- SAVE FILE ---
-    if content == original_content:
-        print(" -> No changes needed. The patch may have already been applied.")
-    else:
-        with open(filename, 'w', encoding='utf-8') as file:
-            file.write(content)
-        print("\nPatch 8 successful! Your database is now stable and the mobile UI is optimized.")
+    with open(filename, 'w', encoding='utf-8') as file:
+        file.write(content)
+
+    print("Patch successful! Replaced with your optimized DB code and added PWA install prompt logic.")
 
 if __name__ == "__main__":
     apply_patch()

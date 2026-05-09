@@ -186,6 +186,9 @@
     <img id="fullscreenImage">
 </div>
 
+
+<!-- PWA Install Button -->
+<button id="pwa-install-btn" style="display:none; position:absolute; bottom:30px; left:50%; transform:translateX(-50%); z-index:9999; padding:12px 24px; background:#00ff88; color:#050510; border:none; border-radius:24px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 4px 15px rgba(0,255,136,0.4);">⬇️ Install Mi3D Notes</button>
 <div id="3d-graph"></div>
 
 <script>
@@ -196,106 +199,62 @@
     let db;
 
     function initDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = (e) => reject("DB Error: " + e.target.errorCode);
-            request.onupgradeneeded = (e) => {
-                db = e.target.result;
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                }
-            };
-            request.onsuccess = (e) => {
-                db = e.target.result;
-                resolve(db);
-            };
-        });
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onerror = () => reject(req.error);
+        req.onupgradeneeded = (e) => {
+          if (!e.target.result.objectStoreNames.contains(STORE_NAME))
+            e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        };
+        req.onsuccess = () => { db = req.result; resolve(db); };
+      });
     }
 
-    async function saveToDB(notesArray) {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        
-        // FIX: Use .put() to safely update existing nodes and insert new ones without race conditions
+    function saveToDB(notesArray) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.clear();                          // prevent stale ghost notes
         notesArray.forEach(note => {
-            const cleanNote = { ...note };
-            delete cleanNote.__sprite; 
-            delete cleanNote.parent; 
-            store.put(cleanNote); 
+          const { __sprite, parent, ...clean } = note;
+          store.put(clean);
         });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
     }
 
-    async function loadFromDB() {
-        return new Promise((resolve) => {
-            const transaction = db.transaction([STORE_NAME], 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result);
-        });
+    function loadFromDB() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readonly');
+        const req = tx.objectStore(STORE_NAME).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
     }
 
-    // --- State Management ---
-    const graphData = { nodes: [], links: [] };
-    let activeNode = null;
-    let idCounter = 1;
-
-    const highlightNodes = new Set();
-    const highlightLinks = new Set();
-    const levelColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0'];
-
-    // --- Graph Initialization ---
-    const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
-        .nodeColor(node => highlightNodes.has(node) ? 'rgba(255, 255, 255, 0.9)' : levelColors[node.level % levelColors.length])
-        .nodeRelSize(6) 
-        .linkWidth(link => highlightLinks.has(link) ? 3 : 1)
-        .linkColor(link => highlightLinks.has(link) ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255,255,255,0.2)')
-        .linkDirectionalParticles(link => highlightLinks.has(link) ? 4 : 0)
-        .linkDirectionalParticleWidth(2)
-        .nodeThreeObjectExtend(true)
-        .nodeThreeObject(node => {
-            const sprite = new SpriteText(node.name);
-            sprite.color = 'white';
-            sprite.textHeight = 4;
-            sprite.position.set(0, 12, 0); 
-            node.__sprite = sprite; 
-            return sprite;
-        })
-        .onNodeClick(node => {
-            activeNode = node;
-            updateActiveNodeDisplay();
-            openInfoPanel(node); // THIS WILL NOW SHOW PROPERLY!
-
-            const distance = 80;
-            const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
-            const newPos = node.x || node.y || node.z
-                ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
-                : { x: 0, y: 0, z: distance };
-            Graph.cameraPosition(newPos, node, 1000);
-        });
-
-    // --- Initial App Load (Async DB) ---
     async function startApp() {
-        await initDB();
-        const savedNotes = await loadFromDB();
-        
-        if (savedNotes.length > 0) {
-            document.getElementById('empty-state-message').style.opacity = '0';
-            idCounter = Math.max(...savedNotes.map(n => n.id)) + 1;
-            graphData.nodes = savedNotes.map(n => ({ ...n }));
-            
-            // Rebuild links
-            savedNotes.forEach(note => {
-                if (note.parentId !== undefined && note.parentId !== null) {
-                    graphData.links.push({ source: note.parentId, target: note.id });
-                    const child = graphData.nodes.find(n => n.id === note.id);
-                    child.parent = graphData.nodes.find(p => p.id === note.parentId);
-                }
-            });
-        }
-        
-        Graph.graphData(graphData);
-        updateActiveNodeDisplay();
+      await initDB();
+      const savedNotes = await loadFromDB();
+
+      if (savedNotes.length > 0) {
+        document.getElementById('empty-state-message').style.opacity = '0';
+        idCounter = savedNotes.reduce((max, n) => Math.max(max, n.id), 0) + 1;
+        graphData.nodes = savedNotes.map(n => ({ ...n }));
+
+        savedNotes.forEach(note => {
+          if (note.parentId != null) {
+            graphData.links.push({ source: note.parentId, target: note.id });
+            const child = graphData.nodes.find(n => n.id === note.id);
+            if (child) child.parent = graphData.nodes.find(p => p.id === note.parentId);
+          }
+        });
+      }
+
+      Graph.graphData(graphData);
+      updateActiveNodeDisplay();
     }
+
     startApp();
 
     // --- Add Nodes Logic ---
@@ -458,6 +417,37 @@
     function openImageViewer(src) { document.getElementById("imageViewer").style.display = "flex"; document.getElementById("fullscreenImage").src = src; }
     function closeImageViewer() { document.getElementById("imageViewer").style.display = "none"; }
 
+    
+    // --- PWA Install Prompt Listener ---
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent the mini-infobar from appearing on mobile
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        deferredPrompt = e;
+        // Update UI notify the user they can install the PWA
+        const installBtn = document.getElementById('pwa-install-btn');
+        installBtn.style.display = 'block';
+
+        installBtn.addEventListener('click', async () => {
+            // Hide the app provided install promotion
+            installBtn.style.display = 'none';
+            // Show the install prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            const { outcome } = await deferredPrompt.userChoice;
+            // We've used the prompt, and can't use it again, throw it away
+            deferredPrompt = null;
+        });
+    });
+
+    window.addEventListener('appinstalled', () => {
+        // Hide the install button if it's still visible
+        document.getElementById('pwa-install-btn').style.display = 'none';
+        deferredPrompt = null;
+        console.log('PWA was successfully installed');
+    });
+    
     // Service Worker for PWA
     if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
 
