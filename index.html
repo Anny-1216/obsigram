@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Interactive 3D Knowledge Graph - Mi Notes Edition</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <meta name="theme-color" content="#00ff88">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
     <style>
         body { 
             margin: 0; 
@@ -200,6 +205,48 @@
             #info-panel { bottom: 20px; }
             #empty-state-message { font-size: 16px; width: 80%; }
         }
+    
+        /* Floating Trigger Buttons */
+        .panel-trigger {
+            position: absolute;
+            z-index: 20;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(15, 15, 25, 0.9);
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .panel-trigger:active { transform: scale(0.9); }
+        #add-trigger { top: 20px; left: 20px; }
+        #search-trigger { top: 20px; right: 20px; }
+
+        /* Panel Modifications for Hiding/Showing */
+        .panel {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9);
+        }
+        .panel.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+        #controls-container { top: 80px; left: 20px; }
+        #search-container { top: 80px; right: 20px; }
+        
+        @media (max-width: 768px) {
+            #controls-container, #search-container { width: 280px; left: 50%; margin-left: -140px; top: 80px; }
+        }
+    
     </style>
 
     <!-- Locked, stable versions of 3D libraries -->
@@ -228,7 +275,7 @@
         }
         
         Graph.graphData(graphData);
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
     }
     startApp();
     
@@ -258,7 +305,7 @@
         }
         
         Graph.graphData(graphData);
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
     }
     startApp();
     
@@ -288,7 +335,7 @@
         }
         
         Graph.graphData(graphData);
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
     }
     startApp();
     
@@ -429,7 +476,7 @@
         // Node Click Event
         .onNodeClick(node => {
             activeNode = node;
-            updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+            updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
             openInfoPanel(node);
 
             const distance = 80;
@@ -467,7 +514,7 @@
         }
 
         activeNode = newNode;
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
         Graph.graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
         
         titleEl.value = '';
@@ -507,7 +554,7 @@
             
             openInfoPanel(targetNode);
             activeNode = targetNode;
-            updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+            updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
         } else {
             alert("Node not found!");
         }
@@ -536,6 +583,20 @@
         Graph.cameraPosition({ x: 0, y: 0, z: 250 }, { x: 0, y: 0, z: 0 }, 1500);
     });
 
+    
+    // --- UI Toggle Logic & PWA ---
+    function toggleUI(id) {
+        const target = document.getElementById(id);
+        const otherId = id === 'controls-container' ? 'search-container' : 'controls-container';
+        document.getElementById(otherId).classList.remove('visible'); // Close the other one
+        target.classList.toggle('visible');
+    }
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+    
     // --- UI Controls & MI NOTES LOGIC ---
     function updateActiveNodeDisplay() {
         document.getElementById('active-node-display').innerText = activeNode ? activeNode.name : "None (Will be Root)";
@@ -569,7 +630,7 @@
         activeNode.info = newInfo;
         if (activeNode.__sprite) activeNode.__sprite.text = newTitle;
 
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
         
         // Visual feedback for saving
         const saveBtn = document.querySelector('.toolbar button:last-child');
@@ -655,7 +716,7 @@
         }
         
         Graph.graphData(graphData);
-        updateActiveNodeDisplay(); saveToDB(graphData.nodes);
+        updateActiveNodeDisplay(); toggleUI('search-container'); saveToDB(graphData.nodes); toggleUI('controls-container');
     }
     startApp();
     
