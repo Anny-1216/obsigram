@@ -113,6 +113,18 @@
         @media (max-width: 768px) {
             #controls-container, #search-container { width: 280px; left: 50%; margin-left: -140px; top: 80px; }
             .main-btn, .btn-secondary { padding: 12px; } /* Larger touch targets */
+            
+            /* Mobile Info Panel Adjustments (Bottom Sheet Style) */
+            #info-panel { 
+                bottom: 0; width: 100vw; max-width: 100vw; 
+                border-radius: 24px 24px 0 0; padding: 20px 15px 10px 15px; 
+                border-left: none; border-right: none; border-bottom: none;
+            }
+            #edit-content-input { max-height: 40vh; } /* Gives keyboard room */
+            .toolbar button { font-size: 18px; padding: 5px; } /* Prevent toolbar crowding */
+            
+            /* Adjust Fullscreen on Mobile */
+            #info-panel.info-fullscreen { padding-top: 60px; border-radius: 0; }
         }
     </style>
 
@@ -203,14 +215,14 @@
     async function saveToDB(notesArray) {
         const transaction = db.transaction([STORE_NAME], 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        store.clear().onsuccess = () => {
-            notesArray.forEach(note => {
-                const cleanNote = { ...note };
-                delete cleanNote.__sprite; // Don't save 3D objects to DB
-                delete cleanNote.parent; // Don't save circular references
-                store.add(cleanNote);
-            });
-        };
+        
+        // FIX: Use .put() to safely update existing nodes and insert new ones without race conditions
+        notesArray.forEach(note => {
+            const cleanNote = { ...note };
+            delete cleanNote.__sprite; 
+            delete cleanNote.parent; 
+            store.put(cleanNote); 
+        });
     }
 
     async function loadFromDB() {
