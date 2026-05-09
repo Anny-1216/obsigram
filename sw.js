@@ -1,53 +1,86 @@
-const CACHE_NAME = 'mi3d-notes-v1';
+// sw.js — Mi3D Notes Service Worker
+// Bump CACHE_VERSION whenever you deploy new files
+const CACHE_VERSION = 'mi3d-v1';
 
-// List the files we want to cache for offline use
-const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './manifest.json',
-  './favicon.ico'
+const PRECACHE_URLS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  // 3D lib CDN copies — cache on first visit so app works offline
 ];
 
-// 1. Install the Service Worker and cache the files
-self.addEventListener('install', event => {
+// ── Install: pre-cache shell ──────────────────────────────────────────
+self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('Opened cache');
-        return cache.addAll(ASSETS_TO_CACHE);
-      })
-      .then(() => self.skipWaiting()) // Force the waiting service worker to become the active service worker
+    caches.open(CACHE_VERSION).then((cache) => {
+      return cache.addAll(PRECACHE_URLS);
+    }).then(() => self.skipWaiting()) // activate immediately
   );
 });
 
-// 2. Activate the Service Worker and clean up old caches if the version changes
-self.addEventListener('activate', event => {
+// ── Activate: delete old caches ───────────────────────────────────────
+self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_VERSION)
+          .map((key) => caches.delete(key))
+      )
+    ).then(() => self.clients.claim()) // take control of all tabs
   );
-  return self.clients.claim(); // Ensure the service worker takes control immediately
 });
 
-// 3. Intercept network requests and serve from cache if available (Offline Support)
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Cache hit - return the response from the cached version
-        if (response) {
+// ── Fetch: Network-first for navigation, Cache-first for assets ───────
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Only handle GET requests on our own origin (+ CDN scripts)
+  if (request.method !== 'GET') return;
+
+  // Navigation requests (HTML pages) — network first, fallback to cache
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_VERSION).then((c) => c.put(request, clone));
           return response;
-        }
-        // Not in cache - return the result from the live network
-        return fetch(event.request);
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // CDN scripts (three.js, 3d-force-graph) — cache first, update in bg
+  if (url.hostname !== self.location.hostname) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const networkFetch = fetch(request).then((response) => {
+          if (response.ok) {
+            caches.open(CACHE_VERSION).then((c) => c.put(request, response.clone()));
+          }
+          return response;
+        });
+        return cached || networkFetch;
       })
+    );
+    return;
+  }
+
+  // Local assets — stale-while-revalidate
+  event.respondWith(
+    caches.open(CACHE_VERSION).then((cache) =>
+      cache.match(request).then((cached) => {
+        const networkFetch = fetch(request).then((response) => {
+          if (response.ok) cache.put(request, response.clone());
+          return response;
+        }).catch(() => cached); // offline fallback
+        return cached || networkFetch;
+      })
+    )
   );
 });

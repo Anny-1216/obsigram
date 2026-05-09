@@ -5,21 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mi3D Notes App</title>
     
-    <!-- PWA Setup (For Vercel & APK Feel) -->
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <meta name="theme-color" content="#00ff88">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mi3D Notes">
 
     <style>
         body { 
             margin: 0; overflow: hidden; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             background-color: #050510; color: white;
-            overscroll-behavior: none; /* Prevents mobile pull-to-refresh */
+            overscroll-behavior: none;
         }
         
-        /* Floating Trigger Buttons (APK Feel) */
         .panel-trigger {
             position: absolute; z-index: 20; width: 50px; height: 50px; border-radius: 50%;
             background: rgba(15, 15, 25, 0.9); border: 1px solid #00ff88; color: #00ff88;
@@ -28,125 +28,164 @@
             transition: transform 0.2s;
         }
         .panel-trigger:active { transform: scale(0.9); }
-        #add-trigger { top: 20px; left: 20px; font-weight: bold; }
+        #add-trigger    { top: 20px; left: 20px; font-weight: bold; }
         #search-trigger { top: 20px; right: 20px; }
 
-        /* UI Panels - Hidden smoothly by default */
         .panel {
-            position: absolute; background: rgba(15, 15, 25, 0.85); padding: 15px;
-            border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-            border: 1px solid #333; z-index: 10; backdrop-filter: blur(4px);
-            transition: all 0.3s ease; opacity: 0; pointer-events: none; transform: translateY(-10px);
+            position: absolute;
+            background: rgba(15, 15, 25, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            border: 1px solid #333;
+            z-index: 10;
+            backdrop-filter: blur(4px);
+            box-sizing: border-box;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            opacity: 0; pointer-events: none; transform: translateY(-10px);
         }
-        
-        /* THIS WAS THE BUG: Now panels actually show up! */
         .panel.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
         
         #controls-container { top: 80px; left: 20px; width: 280px; }
-        #search-container { top: 80px; right: 20px; width: 250px; }
-        
-        /* Mi Notes Modal Panel */
-        #info-panel { 
-            bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px); 
-            width: 450px; max-width: 95vw; border-color: #00ff88; flex-direction: column; display: flex;
-        }
-        #info-panel.visible { transform: translateX(-50%) translateY(0); }
+        #search-container   { top: 80px; right: 20px; width: 250px; }
 
-        /* Fullscreen Notes App Styling (Trapped Fix) */
+        /* ── INFO PANEL FIX ──
+           Use left+right anchoring instead of a fixed width + translateX(-50%).
+           This guarantees it never overflows on any screen width. */
+        #info-panel {
+            left: 12px;
+            right: 12px;
+            bottom: 20px;
+            width: auto;          /* driven by left+right */
+            max-width: 480px;     /* keeps it compact on desktop */
+            /* horizontally centre on wide screens by adjusting margin */
+            margin-left: auto;
+            margin-right: auto;
+            border-color: #00ff88;
+            display: flex;
+            flex-direction: column;
+            transform: translateY(20px); /* override panel default */
+        }
+        #info-panel.visible { transform: translateY(0); }
+
+        /* Fullscreen editor mode */
         #info-panel.info-fullscreen {
-            position: fixed; width: 100%; height: 100dvh; max-width: none;
-            top: 0; left: 0; bottom: auto; transform: none; border-radius: 0;
-            background: rgba(10, 10, 15, 0.98); z-index: 9999;
-            padding: 70px 20px 20px 20px; display: flex; flex-direction: column;
-            border-top: none; box-sizing: border-box;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            max-width: none;
+            height: 100dvh;
+            bottom: auto;
+            transform: none !important;
+            border-radius: 0;
+            background: rgba(10, 10, 15, 0.98);
+            z-index: 9999;
+            padding: 70px 20px 20px 20px;
+            border-top: none;
+            margin: 0;
         }
-        #info-panel.info-fullscreen .close-btn { top: 15px; right: 20px; font-size: 36px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
-        #info-panel.info-fullscreen .fs-btn { top: 22px; right: 75px; font-size: 28px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+        #info-panel.info-fullscreen .close-btn { top: 15px; right: 20px; font-size: 36px; color: #fff; }
+        #info-panel.info-fullscreen .fs-btn    { top: 22px; right: 75px;  font-size: 28px; color: #fff; }
 
-        /* Empty State Message */
         #empty-state-message {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #555; font-size: 24px; font-weight: bold; text-align: center;
             z-index: 5; pointer-events: none; transition: opacity 0.3s;
         }
 
-        /* Inputs & Buttons */
         input, textarea {
             width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 10px;
-            border: 1px solid #555; border-radius: 4px; background: rgba(0,0,0,0.5); color: white; outline: none;
+            border: 1px solid #555; border-radius: 4px;
+            background: rgba(0,0,0,0.5); color: white; outline: none;
         }
         input:focus { border-color: #00ff88; }
         
-        .main-btn, .btn-secondary { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 5px; }
-        .main-btn { background: #007bff; color: white; }
+        .main-btn, .btn-secondary {
+            width: 100%; padding: 10px; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold; margin-bottom: 5px; box-sizing: border-box;
+        }
+        .main-btn       { background: #007bff; color: white; }
         .main-btn:hover { background: #0056b3; }
-        .btn-secondary { background: #555; color: white; }
+        .btn-secondary       { background: #555; color: white; }
         .btn-secondary:hover { background: #777; }
 
-        h3 { margin: 0 0 10px 0; font-size: 16px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        h3 { margin: 0 0 10px 0; font-size: 16px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 5px; }
         .status { margin-bottom: 12px; font-size: 14px; }
-        #active-node-display { color: #00ff88; font-weight: bold; padding: 2px 6px; background: rgba(0, 255, 136, 0.1); border-radius: 3px; word-wrap: break-word; }
+        #active-node-display {
+            color: #00ff88; font-weight: bold;
+            padding: 2px 6px; background: rgba(0,255,136,0.1);
+            border-radius: 3px; word-wrap: break-word;
+        }
 
-        /* Top Right Buttons */
-        .close-btn, .fs-btn { position: absolute; top: 10px; background: transparent; color: #aaa; width: auto; padding: 0; font-size: 24px; border: none; cursor: pointer; z-index: 10; }
-        .close-btn { right: 15px; }
-        .fs-btn { right: 50px; font-size: 20px; top: 12px;}
+        .close-btn, .fs-btn {
+            position: absolute; top: 10px; background: transparent;
+            color: #aaa; width: auto; padding: 0; font-size: 24px;
+            border: none; cursor: pointer; z-index: 10;
+        }
+        .close-btn       { right: 15px; }
+        .fs-btn          { right: 50px; font-size: 20px; top: 12px; }
         .close-btn:hover, .fs-btn:hover { color: white; }
 
-        /* Mi Notes Flowing Editor CSS */
-        #edit-title-input { width: calc(100% - 60px); background: none; border: none; border-bottom: 1px solid #333; color: #00ff88; font-size: 24px; font-weight: bold; margin-bottom: 15px; padding-bottom: 5px; outline: none; border-radius: 0; }
-        #edit-content-input { width: 100%; min-height: 150px; max-height: 35vh; overflow-y: auto; color: #ddd; font-size: 16px; outline: none; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: none; border: none; padding: 0; flex-grow: 1; }
-        #info-panel.info-fullscreen #edit-content-input { max-height: none; font-size: 18px; padding-bottom: 50px; }
-        #edit-content-input img { width: 100%; max-height: 250px; object-fit: cover; border-radius: 12px; margin: 10px 0; cursor: pointer; border: 1px solid #444; }
+        #edit-title-input {
+            width: calc(100% - 60px); background: none; border: none;
+            border-bottom: 1px solid #333; color: #00ff88;
+            font-size: 22px; font-weight: bold; margin-bottom: 15px;
+            padding-bottom: 5px; outline: none; border-radius: 0; box-sizing: border-box;
+        }
+        #edit-content-input {
+            width: 100%; min-height: 100px; max-height: 28vh;
+            overflow-y: auto; color: #ddd; font-size: 15px;
+            outline: none; line-height: 1.6;
+            white-space: pre-wrap; word-break: break-word;
+            background: none; border: none; padding: 0;
+            flex-grow: 1; box-sizing: border-box;
+        }
+        #info-panel.info-fullscreen #edit-content-input {
+            max-height: none; font-size: 18px; padding-bottom: 50px;
+        }
+        #edit-content-input img   { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; margin: 10px 0; cursor: pointer; border: 1px solid #444; }
         #edit-content-input video { width: 100%; border-radius: 12px; margin: 10px 0; }
         
-        /* Bottom Toolbar */
         .toolbar { display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }
-        .toolbar button { background: none; border: none; font-size: 20px; color: #aaa; cursor: pointer; width: auto; padding: 5px 10px; margin: 0; }
+        .toolbar button { background: none; border: none; font-size: 20px; color: #aaa; cursor: pointer; width: auto; padding: 5px 8px; margin: 0; }
         .toolbar button:hover { color: #00ff88; }
+
+        /* DB save toast */
+        #db-toast {
+            position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,255,136,0.12); border: 1px solid #00ff88;
+            color: #00ff88; padding: 5px 18px; border-radius: 20px;
+            font-size: 13px; z-index: 9999;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        #db-toast.show { opacity: 1; }
         
-        /* Fullscreen Image Viewer */
-        .image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; justify-content: center; align-items: center; z-index: 9999; padding: 20px; }
+        .image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; justify-content: center; align-items: center; z-index: 99999; padding: 20px; }
         .image-viewer img { max-width: 100%; max-height: 100%; border-radius: 15px; }
 
-        /* Mobile Overrides */
-        @media (max-width: 768px) {
-            #controls-container, #search-container { width: 280px; left: 50%; margin-left: -140px; top: 80px; }
-            .main-btn, .btn-secondary { padding: 12px; } /* Larger touch targets */
-            
-            /* Mobile Info Panel Adjustments (Bottom Sheet Style) */
-            #info-panel { 
-                bottom: 0; width: 100vw; max-width: 100vw; 
-                border-radius: 24px 24px 0 0; padding: 20px 15px 10px 15px; 
-                border-left: none; border-right: none; border-bottom: none;
-            }
-            #edit-content-input { max-height: 40vh; } /* Gives keyboard room */
-            .toolbar button { font-size: 18px; padding: 5px; } /* Prevent toolbar crowding */
-            
-            /* Adjust Fullscreen on Mobile */
-            #info-panel.info-fullscreen { padding-top: 60px; border-radius: 0; }
+        /* Narrow screens: side panels go full width */
+        @media (max-width: 480px) {
+            #controls-container { width: calc(100vw - 40px); }
+            #search-container   { width: calc(100vw - 40px); right: 20px; }
         }
     </style>
 
-    <!-- Locked, stable versions of 3D libraries -->
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three-spritetext@1.8.1/dist/three-spritetext.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
 </head>
 <body>
 
-<!-- Floating APK Triggers -->
-<div id="add-trigger" class="panel-trigger" onclick="toggleUI('controls-container')">＋</div>
+<div id="add-trigger"    class="panel-trigger" onclick="toggleUI('controls-container')">＋</div>
 <div id="search-trigger" class="panel-trigger" onclick="toggleUI('search-container')">🔍</div>
 
 <div id="empty-state-message">Graph is empty.<br>Add your first node!</div>
+<div id="db-toast">Saved ✓</div>
 
 <!-- Left Panel: Node Creation -->
 <div id="controls-container" class="panel">
     <h3>Build Graph</h3>
-    <div class="status">
-        Parent: <span id="active-node-display">None (Will be Root)</span>
-    </div>
+    <div class="status">Parent: <span id="active-node-display">None (Will be Root)</span></div>
     <input type="text" id="node-input" placeholder="Node Title..." autocomplete="off">
     <button id="add-btn" class="main-btn">Add Node</button>
 </div>
@@ -157,306 +196,351 @@
     <input type="text" id="search-input" placeholder="Search Node Title..." autocomplete="off">
     <button id="search-btn" class="main-btn">Find Path</button>
     <button id="clear-search-btn" class="btn-secondary">Clear Highlight</button>
-    <button id="reset-cam-btn" class="btn-secondary">Reset Camera</button>
+    <button id="reset-cam-btn"    class="btn-secondary">Reset Camera</button>
+    <button id="export-btn"       class="btn-secondary">⬇ Export Backup</button>
 </div>
 
-<!-- Bottom Panel: Mi Notes Flowing Editor Modal -->
+<!-- Bottom: Notes Editor Panel -->
 <div id="info-panel" class="panel">
     <button id="fs-btn" class="fs-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen">⛶</button>
     <button class="close-btn" onclick="closeInfoPanel()">×</button>
-    
     <input type="text" id="edit-title-input" placeholder="Node Title...">
-    
-    <!-- FLOWING CONTENT EDITOR -->
-    <div id="edit-content-input" contenteditable="true" placeholder="Write notes here... mix text, images, and video!"></div>
-    
-    <!-- Bottom Toolbar -->
+    <div id="edit-content-input" contenteditable="true" placeholder="Write notes here..."></div>
     <div class="toolbar">
-        <button onclick="document.execCommand('undo')" title="Undo">↶</button>
-        <button onclick="document.execCommand('redo')" title="Redo">↷</button>
+        <button onclick="document.execCommand('undo')"  title="Undo">↶</button>
+        <button onclick="document.execCommand('redo')"  title="Redo">↷</button>
         <button onclick="document.getElementById('imagePicker').click()" title="Add Media">🖼️</button>
-        <button onclick="addCheckbox()" title="Add Checkbox">☑️</button>
-        <button onclick="saveNodeEdits()" style="color:#00ff88; font-weight:bold;" title="Save Changes">✓ Save</button>
+        <button onclick="addCheckbox()" title="Checkbox">☑️</button>
+        <button onclick="saveNodeEdits()" style="color:#00ff88;font-weight:bold;" title="Save">✓ Save</button>
     </div>
 </div>
 
-<!-- Hidden File Picker & Fullscreen Viewer -->
 <input type="file" id="imagePicker" style="display:none;" accept="image/*,video/*" multiple>
 <div class="image-viewer" id="imageViewer" onclick="closeImageViewer()">
     <img id="fullscreenImage">
 </div>
 
-
-<!-- PWA Install Button -->
-<button id="pwa-install-btn" style="display:none; position:absolute; bottom:30px; left:50%; transform:translateX(-50%); z-index:9999; padding:12px 24px; background:#00ff88; color:#050510; border:none; border-radius:24px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 4px 15px rgba(0,255,136,0.4);">⬇️ Install Mi3D Notes</button>
 <div id="3d-graph"></div>
 
 <script>
-    // --- IndexedDB Persistence Engine ---
-    const DB_NAME = 'MiNotes3D_DB';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'notes';
-    let db;
+// ═══════════════════════════════════════
+//  IndexedDB — versioned + safe
+// ═══════════════════════════════════════
+const DB_NAME    = 'MiNotes3D_DB';
+const DB_VERSION = 2;
+const STORE_NAME = 'notes';
+const META_STORE = 'meta';
+let db = null;
 
-    function initDB() {
-      return new Promise((resolve, reject) => {
+function initDB() {
+    return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
+
         req.onerror = () => reject(req.error);
+
         req.onupgradeneeded = (e) => {
-          if (!e.target.result.objectStoreNames.contains(STORE_NAME))
-            e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        };
-        req.onsuccess = () => { db = req.result; resolve(db); };
-      });
-    }
-
-    function saveToDB(notesArray) {
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction([STORE_NAME], 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.clear();                          // prevent stale ghost notes
-        notesArray.forEach(note => {
-          const { __sprite, parent, ...clean } = note;
-          store.put(clean);
-        });
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-      });
-    }
-
-    function loadFromDB() {
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction([STORE_NAME], 'readonly');
-        const req = tx.objectStore(STORE_NAME).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }
-
-    async function startApp() {
-      await initDB();
-      const savedNotes = await loadFromDB();
-
-      if (savedNotes.length > 0) {
-        document.getElementById('empty-state-message').style.opacity = '0';
-        idCounter = savedNotes.reduce((max, n) => Math.max(max, n.id), 0) + 1;
-        graphData.nodes = savedNotes.map(n => ({ ...n }));
-
-        savedNotes.forEach(note => {
-          if (note.parentId != null) {
-            graphData.links.push({ source: note.parentId, target: note.id });
-            const child = graphData.nodes.find(n => n.id === note.id);
-            if (child) child.parent = graphData.nodes.find(p => p.id === note.parentId);
-          }
-        });
-      }
-
-      Graph.graphData(graphData);
-      updateActiveNodeDisplay();
-    }
-
-    startApp();
-
-    // --- Add Nodes Logic ---
-    function addNode() {
-        const titleEl = document.getElementById('node-input');
-        const nodeName = titleEl.value.trim();
-        if (!nodeName) { alert("Please enter a Node Title"); return; }
-
-        const newNode = { 
-            id: idCounter++, 
-            name: nodeName,
-            info: "", 
-            level: activeNode ? activeNode.level + 1 : 0,
-            parent: activeNode,
-            parentId: activeNode ? activeNode.id : null
-        };
-
-        if (graphData.nodes.length === 0) {
-            graphData.nodes.push(newNode);
-            document.getElementById('empty-state-message').style.opacity = '0';
-        } else {
-            graphData.nodes.push(newNode);
-            graphData.links.push({ source: activeNode.id, target: newNode.id });
-        }
-
-        activeNode = newNode;
-        updateActiveNodeDisplay();
-        saveToDB(graphData.nodes);
-        Graph.graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
-        
-        titleEl.value = '';
-        titleEl.blur(); 
-        
-        toggleUI('controls-container'); // Hide panel
-        openInfoPanel(newNode); // Open editor
-    }
-
-    // --- Search Logic ---
-    function searchAndHighlight() {
-        const query = document.getElementById('search-input').value.trim().toLowerCase();
-        if (!query) return;
-
-        highlightNodes.clear(); highlightLinks.clear();
-        const targetNode = graphData.nodes.find(n => n.name.toLowerCase().includes(query));
-        
-        if (targetNode) {
-            let current = targetNode;
-            highlightNodes.add(current);
-            while (current.parent != null) {
-                const link = graphData.links.find(l => 
-                    (l.source.id === current.parent.id && l.target.id === current.id) ||
-                    (l.target.id === current.parent.id && l.source.id === current.id)
-                );
-                if (link) highlightLinks.add(link);
-                current = current.parent;
-                highlightNodes.add(current);
+            const d = e.target.result;
+            if (!d.objectStoreNames.contains(STORE_NAME)) {
+                const s = d.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                s.createIndex('parentId', 'parentId', { unique: false });
             }
+            if (!d.objectStoreNames.contains(META_STORE)) {
+                d.createObjectStore(META_STORE, { keyPath: 'key' });
+            }
+        };
 
-            Graph.cameraPosition({ x: targetNode.x, y: targetNode.y, z: targetNode.z + 80 }, targetNode, 1500);
-            activeNode = targetNode;
-            updateActiveNodeDisplay();
-            toggleUI('search-container'); // Hide panel
-            openInfoPanel(targetNode); // Open editor
-        } else { alert("Node not found!"); }
-
-        updateGraphVisuals();
-        document.getElementById('search-input').blur();
-    }
-
-    function clearHighlight() {
-        highlightNodes.clear(); highlightLinks.clear();
-        document.getElementById('search-input').value = '';
-        updateGraphVisuals();
-        closeInfoPanel();
-    }
-
-    function updateGraphVisuals() {
-        Graph.nodeColor(Graph.nodeColor()).linkWidth(Graph.linkWidth())
-             .linkColor(Graph.linkColor()).linkDirectionalParticles(Graph.linkDirectionalParticles());
-    }
-
-    document.getElementById('reset-cam-btn').addEventListener('click', () => {
-        Graph.cameraPosition({ x: 0, y: 0, z: 250 }, { x: 0, y: 0, z: 0 }, 1500);
+        req.onsuccess = (e) => {
+            db = e.target.result;
+            // If another tab upgrades the DB, close gracefully
+            db.onversionchange = () => { db.close(); location.reload(); };
+            resolve(db);
+        };
     });
+}
 
-    // --- UI Controls & MI NOTES LOGIC ---
-    function toggleUI(id) {
-        const target = document.getElementById(id);
-        const otherId = id === 'controls-container' ? 'search-container' : 'controls-container';
-        document.getElementById(otherId).classList.remove('visible'); 
-        target.classList.toggle('visible');
-    }
+async function saveToDB(notesArray) {
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+        const tx    = db.transaction([STORE_NAME, META_STORE], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const meta  = tx.objectStore(META_STORE);
 
-    function updateActiveNodeDisplay() {
-        document.getElementById('active-node-display').innerText = activeNode ? activeNode.name : "None (Will be Root)";
-    }
+        store.clear();
+        notesArray.forEach(note => {
+            store.put({
+                id:       note.id,
+                name:     note.name,
+                info:     note.info     || '',
+                level:    note.level,
+                parentId: note.parentId ?? null,
+            });
+        });
+        meta.put({ key: 'idCounter', value: idCounter });
 
-    function openInfoPanel(node) {
-        document.getElementById('edit-title-input').value = node.name || "";
-        document.getElementById('edit-content-input').innerHTML = node.info || "";
-        document.getElementById('info-panel').classList.add('visible'); // <-- THE MAGIC FIX
-    }
+        tx.oncomplete = () => { showToast('Saved ✓'); resolve(); };
+        tx.onerror    = () => reject(tx.error);
+        tx.onabort    = () => reject('Transaction aborted');
+    });
+}
 
-    function closeInfoPanel() {
-        document.getElementById('info-panel').classList.remove('visible'); // <-- THE MAGIC FIX
-    }
+async function loadFromDB() {
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+        const tx    = db.transaction([STORE_NAME, META_STORE], 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const meta  = tx.objectStore(META_STORE);
+        let notes;
 
-    function toggleFullscreen() {
-        const panel = document.getElementById('info-panel');
-        panel.classList.toggle('info-fullscreen');
-        document.getElementById('fs-btn').innerText = panel.classList.contains('info-fullscreen') ? '🗗' : '⛶';
-    }
+        store.getAll().onsuccess = (e) => { notes = e.target.result; };
+        meta.get('idCounter').onsuccess = (e) => {
+            if (e.target.result) idCounter = e.target.result.value;
+        };
 
-    function saveNodeEdits() {
-        if (!activeNode) return;
-        const newTitle = document.getElementById('edit-title-input').value.trim();
-        if (!newTitle) { alert("Node title cannot be empty."); return; }
+        tx.oncomplete = () => resolve(notes || []);
+        tx.onerror    = () => reject(tx.error);
+    });
+}
 
-        activeNode.name = newTitle;
-        activeNode.info = document.getElementById('edit-content-input').innerHTML;
-        if (activeNode.__sprite) activeNode.__sprite.text = newTitle;
+// JSON safety-net export
+function exportBackup() {
+    const payload = {
+        version:   DB_VERSION,
+        idCounter,
+        exportedAt: new Date().toISOString(),
+        nodes: graphData.nodes.map(n => ({
+            id: n.id, name: n.name, info: n.info || '',
+            level: n.level, parentId: n.parentId ?? null
+        }))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: `mi3d-${Date.now()}.json` });
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
+function showToast(msg) {
+    const t = document.getElementById('db-toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// ═══════════════════════════════════════
+//  App State
+// ═══════════════════════════════════════
+const graphData    = { nodes: [], links: [] };
+let activeNode     = null;
+let idCounter      = 1;
+const highlightNodes = new Set();
+const highlightLinks = new Set();
+const levelColors    = ['#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4','#46f0f0'];
+
+// ═══════════════════════════════════════
+//  3D Graph
+// ═══════════════════════════════════════
+const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+    .nodeColor(node => highlightNodes.has(node) ? 'rgba(255,255,255,0.9)' : levelColors[node.level % levelColors.length])
+    .nodeRelSize(6)
+    .linkWidth(link => highlightLinks.has(link) ? 3 : 1)
+    .linkColor(link => highlightLinks.has(link) ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)')
+    .linkDirectionalParticles(link => highlightLinks.has(link) ? 4 : 0)
+    .linkDirectionalParticleWidth(2)
+    .nodeThreeObjectExtend(true)
+    .nodeThreeObject(node => {
+        const sprite = new SpriteText(node.name);
+        sprite.color = 'white'; sprite.textHeight = 4; sprite.position.set(0, 12, 0);
+        node.__sprite = sprite; return sprite;
+    })
+    .onNodeClick(node => {
+        activeNode = node;
         updateActiveNodeDisplay();
-        saveToDB(graphData.nodes); // Save everything locally!
-        
-        const saveBtn = document.querySelector('.toolbar button:last-child');
-        const originalText = saveBtn.innerText;
-        saveBtn.innerText = "Saved!";
-        setTimeout(() => saveBtn.innerText = originalText, 1500);
-    }
+        openInfoPanel(node);
+        const distance  = 80;
+        const mag       = Math.hypot(node.x || 0.01, node.y || 0.01, node.z || 0.01);
+        const distRatio = 1 + distance / mag;
+        const newPos    = (node.x || node.y || node.z)
+            ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
+            : { x: 0, y: 0, z: distance };
+        Graph.cameraPosition(newPos, node, 1000);
+    });
 
-    function addCheckbox() {
-        const editor = document.getElementById("edit-content-input");
-        editor.innerHTML += "☐ ";
-        editor.focus();
-        const range = document.createRange();
-        const sel = window.getSelection();
-        range.selectNodeContents(editor);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-    }
+// ═══════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════
+async function startApp() {
+    try { await initDB(); } catch(e) { console.warn('DB unavailable:', e); showToast('⚠ No persistence'); }
 
-    document.getElementById("imagePicker").addEventListener("change", function(){
-        Array.from(this.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const editor = document.getElementById("edit-content-input");
-                if (file.type.startsWith("image")) {
-                    editor.innerHTML += `<img src="${e.target.result}" onclick="openImageViewer('${e.target.result}')">`;
-                } else if (file.type.startsWith("video")) {
-                    editor.innerHTML += `<video controls><source src="${e.target.result}"></video>`;
+    let saved = [];
+    try { saved = await loadFromDB(); } catch(e) { console.warn('Load err:', e); }
+
+    if (saved.length) {
+        document.getElementById('empty-state-message').style.opacity = '0';
+        const maxId = Math.max(...saved.map(n => n.id));
+        if (maxId >= idCounter) idCounter = maxId + 1;
+        graphData.nodes = saved.map(n => ({ ...n }));
+        const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
+        saved.forEach(note => {
+            if (note.parentId != null) {
+                const child  = nodeMap.get(note.id);
+                const parent = nodeMap.get(note.parentId);
+                if (child && parent) {
+                    child.parent = parent;
+                    graphData.links.push({ source: note.parentId, target: note.id });
                 }
-                editor.innerHTML += "<br><br>";
-            };
-            reader.readAsDataURL(file);
+            }
         });
+    }
+    Graph.graphData(graphData);
+    updateActiveNodeDisplay();
+}
+startApp();
+
+// ═══════════════════════════════════════
+//  Node Operations
+// ═══════════════════════════════════════
+function addNode() {
+    const el   = document.getElementById('node-input');
+    const name = el.value.trim();
+    if (!name) { alert('Please enter a Node Title'); return; }
+
+    const newNode = {
+        id: idCounter++, name, info: '',
+        level:    activeNode ? activeNode.level + 1 : 0,
+        parent:   activeNode,
+        parentId: activeNode ? activeNode.id : null,
+    };
+    graphData.nodes.push(newNode);
+    if (activeNode) graphData.links.push({ source: activeNode.id, target: newNode.id });
+    if (graphData.nodes.length === 1) document.getElementById('empty-state-message').style.opacity = '0';
+
+    activeNode = newNode;
+    updateActiveNodeDisplay();
+    saveToDB(graphData.nodes);
+    Graph.graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
+
+    el.value = ''; el.blur();
+    toggleUI('controls-container');
+    openInfoPanel(newNode);
+}
+
+function saveNodeEdits() {
+    if (!activeNode) return;
+    const newTitle = document.getElementById('edit-title-input').value.trim();
+    if (!newTitle) { alert('Node title cannot be empty.'); return; }
+    activeNode.name = newTitle;
+    activeNode.info = document.getElementById('edit-content-input').innerHTML;
+    if (activeNode.__sprite) activeNode.__sprite.text = newTitle;
+    updateActiveNodeDisplay();
+    saveToDB(graphData.nodes);
+}
+
+// ═══════════════════════════════════════
+//  Search
+// ═══════════════════════════════════════
+function searchAndHighlight() {
+    const q = document.getElementById('search-input').value.trim().toLowerCase();
+    if (!q) return;
+    highlightNodes.clear(); highlightLinks.clear();
+    const target = graphData.nodes.find(n => n.name.toLowerCase().includes(q));
+    if (target) {
+        let cur = target;
+        highlightNodes.add(cur);
+        while (cur.parent) {
+            const lnk = graphData.links.find(l =>
+                (l.source.id === cur.parent.id && l.target.id === cur.id) ||
+                (l.target.id === cur.parent.id && l.source.id === cur.id));
+            if (lnk) highlightLinks.add(lnk);
+            cur = cur.parent; highlightNodes.add(cur);
+        }
+        Graph.cameraPosition({ x: target.x, y: target.y, z: target.z + 80 }, target, 1500);
+        activeNode = target; updateActiveNodeDisplay();
+        toggleUI('search-container'); openInfoPanel(target);
+    } else { alert('Node not found!'); }
+    updateGraphVisuals();
+    document.getElementById('search-input').blur();
+}
+
+function clearHighlight() {
+    highlightNodes.clear(); highlightLinks.clear();
+    document.getElementById('search-input').value = '';
+    updateGraphVisuals(); closeInfoPanel();
+}
+
+function updateGraphVisuals() {
+    Graph.nodeColor(Graph.nodeColor()).linkWidth(Graph.linkWidth())
+         .linkColor(Graph.linkColor()).linkDirectionalParticles(Graph.linkDirectionalParticles());
+}
+
+// ═══════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════
+function toggleUI(id) {
+    const other = id === 'controls-container' ? 'search-container' : 'controls-container';
+    document.getElementById(other).classList.remove('visible');
+    document.getElementById(id).classList.toggle('visible');
+}
+function updateActiveNodeDisplay() {
+    document.getElementById('active-node-display').innerText = activeNode ? activeNode.name : 'None (Will be Root)';
+}
+function openInfoPanel(node) {
+    document.getElementById('edit-title-input').value       = node.name || '';
+    document.getElementById('edit-content-input').innerHTML = node.info || '';
+    document.getElementById('info-panel').classList.add('visible');
+}
+function closeInfoPanel() {
+    const p = document.getElementById('info-panel');
+    p.classList.remove('visible', 'info-fullscreen');
+    document.getElementById('fs-btn').innerText = '⛶';
+}
+function toggleFullscreen() {
+    const p = document.getElementById('info-panel');
+    p.classList.toggle('info-fullscreen');
+    document.getElementById('fs-btn').innerText = p.classList.contains('info-fullscreen') ? '🗗' : '⛶';
+}
+function addCheckbox() {
+    const e = document.getElementById('edit-content-input');
+    e.innerHTML += '☐ '; e.focus();
+    const r = document.createRange(); const s = window.getSelection();
+    r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);
+}
+
+document.getElementById('imagePicker').addEventListener('change', function () {
+    Array.from(this.files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const ed = document.getElementById('edit-content-input');
+            if (file.type.startsWith('image'))
+                ed.innerHTML += `<img src="${ev.target.result}" onclick="openImageViewer('${ev.target.result}')">`;
+            else if (file.type.startsWith('video'))
+                ed.innerHTML += `<video controls><source src="${ev.target.result}"></video>`;
+            ed.innerHTML += '<br><br>';
+        };
+        reader.readAsDataURL(file);
     });
+});
 
-    function openImageViewer(src) { document.getElementById("imageViewer").style.display = "flex"; document.getElementById("fullscreenImage").src = src; }
-    function closeImageViewer() { document.getElementById("imageViewer").style.display = "none"; }
+function openImageViewer(src)  { document.getElementById('imageViewer').style.display = 'flex'; document.getElementById('fullscreenImage').src = src; }
+function closeImageViewer()    { document.getElementById('imageViewer').style.display = 'none'; }
 
-    
-    // --- PWA Install Prompt Listener ---
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-        // Prevent the mini-infobar from appearing on mobile
-        e.preventDefault();
-        // Stash the event so it can be triggered later.
-        deferredPrompt = e;
-        // Update UI notify the user they can install the PWA
-        const installBtn = document.getElementById('pwa-install-btn');
-        installBtn.style.display = 'block';
+// ═══════════════════════════════════════
+//  Event Listeners
+// ═══════════════════════════════════════
+document.getElementById('add-btn').addEventListener('click', addNode);
+document.getElementById('search-btn').addEventListener('click', searchAndHighlight);
+document.getElementById('clear-search-btn').addEventListener('click', clearHighlight);
+document.getElementById('reset-cam-btn').addEventListener('click', () => Graph.cameraPosition({ x:0,y:0,z:250 }, { x:0,y:0,z:0 }, 1500));
+document.getElementById('export-btn').addEventListener('click', exportBackup);
+document.getElementById('node-input').addEventListener('keypress',   e => { if (e.key === 'Enter') addNode(); });
+document.getElementById('search-input').addEventListener('keypress', e => { if (e.key === 'Enter') searchAndHighlight(); });
 
-        installBtn.addEventListener('click', async () => {
-            // Hide the app provided install promotion
-            installBtn.style.display = 'none';
-            // Show the install prompt
-            deferredPrompt.prompt();
-            // Wait for the user to respond to the prompt
-            const { outcome } = await deferredPrompt.userChoice;
-            // We've used the prompt, and can't use it again, throw it away
-            deferredPrompt = null;
-        });
-    });
-
-    window.addEventListener('appinstalled', () => {
-        // Hide the install button if it's still visible
-        document.getElementById('pwa-install-btn').style.display = 'none';
-        deferredPrompt = null;
-        console.log('PWA was successfully installed');
-    });
-    
-    // Service Worker for PWA
-    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
-
-    // Event Listeners
-    document.getElementById('add-btn').addEventListener('click', addNode);
-    document.getElementById('search-btn').addEventListener('click', searchAndHighlight);
-    document.getElementById('clear-search-btn').addEventListener('click', clearHighlight);
-    document.getElementById('node-input').addEventListener('keypress', e => { if (e.key === 'Enter') addNode(); });
-    document.getElementById('search-input').addEventListener('keypress', e => { if (e.key === 'Enter') searchAndHighlight(); });
+// ═══════════════════════════════════════
+//  Service Worker
+// ═══════════════════════════════════════
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
+}
 </script>
 </body>
 </html>
