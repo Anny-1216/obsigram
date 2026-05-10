@@ -49,26 +49,21 @@
         #controls-container { top: 80px; left: 20px; width: 280px; }
         #search-container   { top: 80px; right: 20px; width: 250px; }
 
-        /* ── INFO PANEL FIX ──
-           Use left+right anchoring instead of a fixed width + translateX(-50%).
-           This guarantees it never overflows on any screen width. */
         #info-panel {
             left: 12px;
             right: 12px;
             bottom: 20px;
-            width: auto;          /* driven by left+right */
-            max-width: 480px;     /* keeps it compact on desktop */
-            /* horizontally centre on wide screens by adjusting margin */
+            width: auto;          
+            max-width: 480px;     
             margin-left: auto;
             margin-right: auto;
             border-color: #00ff88;
             display: flex;
             flex-direction: column;
-            transform: translateY(20px); /* override panel default */
+            transform: translateY(20px); 
         }
         #info-panel.visible { transform: translateY(0); }
 
-        /* Fullscreen editor mode */
         #info-panel.info-fullscreen {
             position: fixed;
             inset: 0;
@@ -146,11 +141,10 @@
         #edit-content-input img   { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; margin: 10px 0; cursor: pointer; border: 1px solid #444; }
         #edit-content-input video { width: 100%; border-radius: 12px; margin: 10px 0; }
         
-        .toolbar { display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }
+        .toolbar { display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; align-items: center; }
         .toolbar button { background: none; border: none; font-size: 20px; color: #aaa; cursor: pointer; width: auto; padding: 5px 8px; margin: 0; }
         .toolbar button:hover { color: #00ff88; }
 
-        /* DB save toast */
         #db-toast {
             position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%);
             background: rgba(0,255,136,0.12); border: 1px solid #00ff88;
@@ -163,11 +157,33 @@
         .image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; justify-content: center; align-items: center; z-index: 99999; padding: 20px; }
         .image-viewer img { max-width: 100%; max-height: 100%; border-radius: 15px; }
 
-        /* Narrow screens: side panels go full width */
         @media (max-width: 480px) {
             #controls-container { width: calc(100vw - 40px); }
             #search-container   { width: calc(100vw - 40px); right: 20px; }
         }
+        .file-attachment {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #444;
+    padding: 10px;
+    border-radius: 8px;
+    margin: 8px 0;
+    display: inline-block;
+    transition: background 0.2s;
+}
+
+.file-attachment:hover {
+    background: rgba(0, 255, 136, 0.1);
+    border-color: #00ff88;
+}
+
+.file-attachment a {
+    color: #00ff88;
+    text-decoration: none;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
     </style>
 
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
@@ -207,15 +223,18 @@
     <input type="text" id="edit-title-input" placeholder="Node Title...">
     <div id="edit-content-input" contenteditable="true" placeholder="Write notes here..."></div>
     <div class="toolbar">
-        <button onclick="document.execCommand('undo')"  title="Undo">↶</button>
-        <button onclick="document.execCommand('redo')"  title="Redo">↷</button>
-        <button onclick="document.getElementById('imagePicker').click()" title="Add Media">🖼️</button>
-        <button onclick="addCheckbox()" title="Checkbox">☑️</button>
-        <button onclick="saveNodeEdits()" style="color:#00ff88;font-weight:bold;" title="Save">✓ Save</button>
+        <button onclick="deleteActiveNode()" style="color:#ff4444; font-size: 16px; font-weight:bold;" title="Delete Node">🗑️ Delete</button>
+        <div>
+            <button onclick="document.execCommand('undo')"  title="Undo">↶</button>
+            <button onclick="document.execCommand('redo')"  title="Redo">↷</button>
+            <button onclick="document.getElementById('imagePicker').click()" title="Add Media">🖼️</button>
+            <button onclick="addCheckbox()" title="Checkbox">☑️</button>
+            <button onclick="saveNodeEdits()" style="color:#00ff88;font-weight:bold;font-size: 16px;" title="Save">✓ Save</button>
+        </div>
     </div>
 </div>
 
-<input type="file" id="imagePicker" style="display:none;" accept="image/*,video/*" multiple>
+<input type="file" id="imagePicker" style="display:none;" accept="image/*,video/*,application/pdf,.doc,.docx,.txt" multiple>
 <div class="image-viewer" id="imageViewer" onclick="closeImageViewer()">
     <img id="fullscreenImage">
 </div>
@@ -251,7 +270,6 @@ function initDB() {
 
         req.onsuccess = (e) => {
             db = e.target.result;
-            // If another tab upgrades the DB, close gracefully
             db.onversionchange = () => { db.close(); location.reload(); };
             resolve(db);
         };
@@ -301,7 +319,6 @@ async function loadFromDB() {
     });
 }
 
-// JSON safety-net export
 function exportBackup() {
     const payload = {
         version:   DB_VERSION,
@@ -330,7 +347,7 @@ function showToast(msg) {
 // ═══════════════════════════════════════
 //  App State
 // ═══════════════════════════════════════
-const graphData    = { nodes: [], links: [] };
+let graphData      = { nodes: [], links: [] };
 let activeNode     = null;
 let idCounter      = 1;
 const highlightNodes = new Set();
@@ -436,6 +453,44 @@ function saveNodeEdits() {
     saveToDB(graphData.nodes);
 }
 
+function deleteActiveNode() {
+    if (!activeNode) return;
+    if (!confirm(`Are you sure you want to delete "${activeNode.name}" and ALL its sub-nodes?`)) return;
+
+    // Find all children recursively to delete the whole branch
+    const nodesToDelete = new Set();
+    const findChildren = (nodeId) => {
+        nodesToDelete.add(nodeId);
+        const children = graphData.nodes.filter(n => n.parentId === nodeId);
+        children.forEach(c => findChildren(c.id));
+    };
+    findChildren(activeNode.id);
+
+    // Filter out the deleted nodes
+    graphData.nodes = graphData.nodes.filter(n => !nodesToDelete.has(n.id));
+
+    // Filter out any links connected to the deleted nodes
+    graphData.links = graphData.links.filter(l => 
+        !nodesToDelete.has(l.source.id || l.source) && 
+        !nodesToDelete.has(l.target.id || l.target)
+    );
+
+    // Update state
+    activeNode = null;
+    updateActiveNodeDisplay();
+    closeInfoPanel();
+    clearHighlight();
+
+    // Show empty state message if everything is deleted
+    if (graphData.nodes.length === 0) {
+        document.getElementById('empty-state-message').style.opacity = '1';
+    }
+
+    // Refresh Graph and Database
+    Graph.graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
+    saveToDB(graphData.nodes);
+}
+
 // ═══════════════════════════════════════
 //  Search
 // ═══════════════════════════════════════
@@ -506,21 +561,40 @@ function addCheckbox() {
     r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);
 }
 
+
 document.getElementById('imagePicker').addEventListener('change', function () {
+    const ed = document.getElementById('edit-content-input');
+    
     Array.from(this.files).forEach(file => {
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const ed = document.getElementById('edit-content-input');
-            if (file.type.startsWith('image'))
-                ed.innerHTML += `<img src="${ev.target.result}" onclick="openImageViewer('${ev.target.result}')">`;
-            else if (file.type.startsWith('video'))
-                ed.innerHTML += `<video controls><source src="${ev.target.result}"></video>`;
-            ed.innerHTML += '<br><br>';
+            const dataUrl = ev.target.result;
+            
+            if (file.type.startsWith('image')) {
+                ed.innerHTML += `<img src="${dataUrl}" onclick="openImageViewer('${dataUrl}')">`;
+            } 
+            else if (file.type.startsWith('video')) {
+                ed.innerHTML += `<video controls><source src="${dataUrl}"></video>`;
+            } 
+            else if (file.type === 'application/pdf') {
+                // PDF Attachment
+                ed.innerHTML += `
+                    <div class="file-attachment" contenteditable="false">
+                        <a href="${dataUrl}" target="_blank">📄 Open PDF: ${file.name}</a>
+                    </div>`;
+            } 
+            else {
+                // Generic File Attachment
+                ed.innerHTML += `
+                    <div class="file-attachment" contenteditable="false">
+                        <a href="${dataUrl}" download="${file.name}">📎 Download: ${file.name}</a>
+                    </div>`;
+            }
+            ed.innerHTML += '<br>';
         };
         reader.readAsDataURL(file);
     });
 });
-
 function openImageViewer(src)  { document.getElementById('imageViewer').style.display = 'flex'; document.getElementById('fullscreenImage').src = src; }
 function closeImageViewer()    { document.getElementById('imageViewer').style.display = 'none'; }
 
