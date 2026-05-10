@@ -8,7 +8,10 @@
   "orientation": "any",
   "background_color": "#050510",
   "theme_color": "#00ff88",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -21,14 +24,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "icons/screenshot.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
     }
   ]
 }

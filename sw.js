@@ -1,14 +1,14 @@
 // sw.js — Mi3D Notes Service Worker
 // Bump CACHE_VERSION whenever you deploy new files
-const CACHE_VERSION = 'mi3d-v1';
+const CACHE_VERSION = 'mi3d-v2';
 
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  // 3D lib CDN copies — cache on first visit so app works offline
+  'index.html',
+  'manifest.json',
+  'favicon.ico',
+  'https://unpkg.com/three@0.147.0/build/three.min.js',
+  'https://unpkg.com/three-spritetext@1.8.1/dist/three-spritetext.min.js',
+  'https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js'
 ];
 
 // ── Install: pre-cache shell ──────────────────────────────────────────
